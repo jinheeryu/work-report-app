@@ -247,5 +247,11 @@ with col2:
                     file_name=f"{selected_month}_{selected_author}_{current_rank}_일일업무보고서.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
+            # except Exception as ex:
+            #     st.error(f"엑셀 렌더링 중 오류 발생: {ex}")
+            # ... (기존 코드 생략) ...
             except Exception as ex:
-                st.error(f"엑셀 렌더링 중 오류 발생: {ex}")
+                # 🛠️ 에러의 상세 원인과 코드 라인을 직접 확인하기 위한 디버깅 코드
+                import traceback
+                st.error("🚨 에러가 발생한 위치와 상세 로그입니다. 아래 내용을 확인해주세요:")
+                st.code(traceback.format_exc(), language="python")
