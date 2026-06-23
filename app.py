@@ -123,7 +123,7 @@ with col1:
                 st.rerun()
 
 # ----------------------------------------------------
-# 오른쪽 화면: 회사 맞춤형 양식틀 유지 엑셀 다운로드 엔진 (정밀 수정 포인트)
+# 오른쪽 화면: 회사 맞춤형 양식틀 유지 엑셀 다운로드 엔진 (ValueError 차단 정밀 수정)
 # ----------------------------------------------------
 with col2:
     st.header("📥 일일 업무보고서 다운로드")
@@ -155,10 +155,10 @@ with col2:
                 default_sheet = final_wb.active
                 
                 for date_val in unique_dates:
-                    # 🛡️ 최신 .xlsx 포맷을 오류 없이 열기 위해 openpyxl 엔진을 강제 지정해 로드합니다.
-                    template_wb = openpyxl.load_workbook("template.xlsx", data_only=False)
+                    template_wb = openpyxl.load_workbook("template.xlsx")
                     ws = template_wb.active
-                    ws.title = pd.to_datetime(date_val).strftime("%m-%d")
+                    
+                    sheet_title = pd.to_datetime(date_val).strftime("%m-%d")
                     
                     day_data = final_df[final_df["날짜"] == date_val]
                     
@@ -167,20 +167,13 @@ with col2:
                     next_tasks = []
                     
                     for _, row in day_data.iterrows():
-                        time_str = f"{row.get('시작시간', '')} ~ {row.get('종료시간', '')}"
+                        time_str = f"{row['시작시간']} ~ {row['종료시간']}"
+                        content_str = f"[{row['고객사_프로젝트명']}] {row['업무량/내용']} ({row['진행상황']})"
                         
-                        # 🛡️ [진짜 에러 해결 지점]: KeyError를 방지하기 위해 .get() 함수를 이용해 공백이나 유실 대처
-                        proj_val = row.get('고객사_프로젝트명', '')
-                        content_val = row.get('업무량/내용', '')
-                        status_val = row.get('진행상황', '')
-                        
-                        content_str = f"[{proj_val}] {content_val} ({status_val})"
-                        
-                        if row.get('업무구분', '') == "내일 계획":
+                        if row['업무구분'] == "내일 계획":
                             next_tasks.append(content_str)
                         else:
-                            start_time_raw = row.get('시작시간', '09:00')
-                            start_hour = int(str(start_time_raw).split(':')[0])
+                            start_hour = int(row['시작시간'].split(':')[0])
                             if start_hour < 12:
                                 morning_tasks.append((content_str, time_str))
                             else:
@@ -200,7 +193,7 @@ with col2:
                                 break
                         
                         if target_label == "오전" and not target_row:
-                            target_row = 9 
+                            target_row = 9
                         
                         if not target_row:
                             return
@@ -223,17 +216,43 @@ with col2:
                                         new_cell.alignment = Alignment(horizontal=source_cell.alignment.horizontal, vertical=source_cell.alignment.vertical)
                             
                             if is_plan:
-                                ws.cell(row=current_r, column=2, value=f"{i+1:02d}") 
-                                ws.cell(row=current_r, column=3, value=task)         
+                                ws.cell(row=current_r, column=2, value=f"{i+1:02d}")
+                                ws.cell(row=current_r, column=3, value=task)
                             else:
-                                ws.cell(row=current_r, column=3, value=task[0])        
-                                ws.cell(row=current_r, column=19, value=task[1])       
+                                ws.cell(row=current_r, column=3, value=task[0])
+                                ws.cell(row=current_r, column=19, value=task[1])
                     
                     insert_and_fill("익일 업무 계획", next_tasks, is_plan=True)
                     insert_and_fill("오후", afternoon_tasks)
                     insert_and_fill("오전", morning_tasks)
                     
-                    final_wb._add_sheet(ws)
+                    # 🛡️ [핵심 안전 복사 패치] ValueError 타계책
+                    # 외부 워크북의 시트를 통째로 집어넣는 대신, final_wb 내부에 새 시트를 만들고 셀 값을 정석대로 복사합니다.
+                    new_ws = final_wb.create_sheet(title=sheet_title)
+                    
+                    # 1단계: 열 너비 및 행 높이 등 구조 정보 복사
+                    for col in ws.columns:
+                        col_letter = openpyxl.utils.get_column_letter(col[0].column)
+                        new_ws.column_dimensions[col_letter].width = ws.column_dimensions[col_letter].width
+                    for r_idx in range(1, ws.max_row + 1):
+                        if r_idx in ws.row_dimensions:
+                            new_ws.row_dimensions[r_idx].height = ws.row_dimensions[r_idx].height
+                    
+                    # 2단계: 서식 및 데이터 셀 단위 하드웨어 복사 (이름 정의 충돌 근본 방지)
+                    for row in ws.iter_rows(values_only=False):
+                        for cell in row:
+                            new_cell = new_ws.cell(row=cell.row, column=cell.column, value=cell.value)
+                            if cell.has_style:
+                                new_cell.font = Font(name=cell.font.name, size=cell.font.size, bold=cell.font.bold, italic=cell.font.italic, color=cell.font.color)
+                                new_cell.border = Border(left=cell.border.left, right=cell.border.right, top=cell.border.top, bottom=cell.border.bottom)
+                                if cell.fill and cell.fill.fill_type:
+                                    new_cell.fill = PatternFill(fill_type=cell.fill.fill_type, start_color=cell.fill.start_color, end_color=cell.fill.end_color)
+                                new_cell.alignment = Alignment(horizontal=cell.alignment.horizontal, vertical=cell.alignment.vertical, wrap_text=cell.alignment.wrap_text)
+                                new_cell.number_format = cell.number_format
+                    
+                    # 3단계: 템플릿의 원래 병합 정보 완벽 계승
+                    for merged_range in ws.merged_cells.ranges:
+                        new_ws.merge_cells(str(merged_range))
                 
                 if len(final_wb.sheetnames) > 1 and "Sheet" in final_wb.sheetnames:
                     final_wb.remove(default_sheet)
@@ -247,11 +266,7 @@ with col2:
                     file_name=f"{selected_month}_{selected_author}_{current_rank}_일일업무보고서.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
-            # except Exception as ex:
-            #     st.error(f"엑셀 렌더링 중 오류 발생: {ex}")
-            # ... (기존 코드 생략) ...
             except Exception as ex:
-                # 🛠️ 에러의 상세 원인과 코드 라인을 직접 확인하기 위한 디버깅 코드
                 import traceback
-                st.error("🚨 에러가 발생한 위치와 상세 로그입니다. 아래 내용을 확인해주세요:")
+                st.error("🚨 에러가 발생한 위치와 상세 로그입니다:")
                 st.code(traceback.format_exc(), language="python")
