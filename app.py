@@ -18,7 +18,7 @@ except Exception as e:
     st.error("구글 시트 연결에 실패했습니다. Secrets 설정 및 시트 공유 권한을 확인해주세요.")
     df = pd.DataFrame(columns=["날짜", "작성자", "직급", "업무구분", "고객사_프로젝트명", "시작시간", "종료시간", "업무량/내용", "진행상황"])
 
-# 🔍 구글 검색창 스타일 자동완성을 위한 기존 프로젝트 리스트 추출
+# 과거 기록 자동완성용 프로젝트 리스트 추출
 if not df.empty and "고객사_프로젝트명" in df.columns:
     existing_projects = sorted(df["고객사_프로젝트명"].dropna().unique().tolist())
 else:
@@ -27,7 +27,7 @@ else:
 col1, col2 = st.columns([1, 1.2])
 
 # ----------------------------------------------------
-# 왼쪽 화면: 업무 및 계획 입력 폼
+# 왼쪽 화면: 업무 및 계획 입력 폼 (오류 전면 수정본)
 # ----------------------------------------------------
 with col1:
     st.header("📥 업무 내역 입력")
@@ -51,22 +51,30 @@ with col1:
             
         st.write("---")
         
-        # ✨ 구글 검색창 스타일 자동완성 UI
-        project_name = st.selectbox(
-            "고객사_프로젝트명 (검색하거나 직접 입력 후 Enter)",
-            options=existing_projects,
-            index=None,
-            placeholder="예: Redhat_마케팅 대시보드 구축 (타이핑 시 자동 검색)",
-            key="project_search"
+        # ✨ [오류 수정] 절대 지워지지 않는 서치 및 입력 UI 조합
+        st.write("🔗 **고객사_프로젝트명 입력**")
+        if existing_projects:
+            selected_hint = st.selectbox(
+                "💡 과거에 입력된 프로젝트 리스트 (참고용)",
+                options=["-- 새로 직접 입력하기 --"] + existing_projects,
+                index=0
+            )
+            # 리스트에서 항목을 고르면 아래 텍스트 입력창에 자동으로 글자가 채워지도록 연동
+            default_project_text = "" if selected_hint == "-- 새로 직접 입력하기 --" else selected_hint
+        else:
+            default_project_text = ""
+            
+        # 실제 데이터로 저장되는 진짜 입력창 (엔터를 치거나 다른 곳을 눌러도 절대 지워지지 않음)
+        project_name = st.text_input(
+            "✍️ 실제 등록할 고객사_프로젝트명 (필수)",
+            value=default_project_text,
+            placeholder="예: Redhat_마케팅 대시보드 구축"
         )
-        
-        is_new_project = st.checkbox("목록에 없는 새로운 프로젝트 직접 입력하기")
-        if is_new_project:
-            project_name = st.text_input("새로운 고객사_프로젝트명 직접 입력", placeholder="예: Redhat_신규 캠페인")
         
         st.write("---")
         
-        # 🕒 [요구사항 1] 진짜 시계 모양 팝업 창 UI 적용
+        # 🕒 [오류 수정] 시계 UI 접근성 강화 및 타임 입력 가이드
+        st.write("⏰ **작업 시간 선택 (우측 끝 '시계 아이콘'을 누르면 시계 팝업이 뜹니다)**")
         time_col1, time_col2 = st.columns(2)
         with time_col1:
             start_time_input = st.time_input("작업 시작 시간", datetime.time(9, 0))
@@ -90,9 +98,10 @@ with col1:
                 st.error("종료 시간이 시작 시간보다 빠르거나 같을 수 없습니다!")
             elif not author_name.strip():
                 st.warning("작성자 성명을 입력해주세요!")
-            elif not project_name:
-                st.warning("고객사_프로젝트명을 선택하거나 입력해주세요!")
+            elif not project_name.strip():
+                st.warning("고객사_프로젝트명을 입력해주세요!")
             else:
+                # 데이터 프레임 구성 (9개 칼럼 일치)
                 new_data = pd.DataFrame([{
                     "날짜": date_input.strftime("%Y-%m-%d"),
                     "작성자": author_name.strip(),
@@ -135,26 +144,18 @@ with col2:
         
         st.write(f"👉 **{selected_author} {current_rank}**님의 서식이 준비되었습니다.")
         
-        # 🛠️ 회사 템플릿 양식 기반 동적 데이터 매핑 엔진 실행
         if st.button("📊 템플릿 서식으로 보고서 생성하기"):
             try:
                 unique_dates = sorted(final_df["날짜"].unique())
-                
-                # 메모리 기반 엑셀 파일 생성 준비
                 output_buffer = io.BytesIO()
-                
-                # 최종 저장용 메인 워크북
                 final_wb = openpyxl.Workbook()
-                # 첫 기본 시트 삭제를 위해 임시 처리
                 default_sheet = final_wb.active
                 
                 for date_val in unique_dates:
-                    # 1. 템플릿 파일 읽기
                     template_wb = openpyxl.load_workbook("template.xlsx")
                     ws = template_wb.active
                     ws.title = pd.to_datetime(date_val).strftime("%m-%d")
                     
-                    # 2. 당일 데이터 필터링 및 오전/오후/익일 분류
                     day_data = final_df[final_df["날짜"] == date_val]
                     
                     morning_tasks = []
@@ -168,14 +169,13 @@ with col2:
                         if row['업무구분'] == "내일 계획":
                             next_tasks.append(content_str)
                         else:
-                            # 12시 이전 시작은 오전, 그 외는 오후
                             start_hour = int(row['시작시간'].split(':')[0])
                             if start_hour < 12:
                                 morning_tasks.append((content_str, time_str))
                             else:
                                 afternoon_tasks.append((content_str, time_str))
                     
-                    # 3. 우측 작성자 정보 매핑 (양식 텍스트 검색 기반)
+                    # 작성자 정보 매핑 검색
                     for r in range(1, 15):
                         for c in range(1, 20):
                             val = ws.cell(row=r, column=c).value
@@ -186,55 +186,44 @@ with col2:
                             if val and "작성일" in str(val):
                                 ws.cell(row=r, column=c+1, value=date_val)
                     
-                    # 4. 동적 행 삽입 및 데이터 적재 함수 정의
                     def insert_and_fill(target_label, task_list, is_plan=False):
-                        # 라벨 행 찾기
                         target_row = None
                         for r in range(1, ws.max_row + 1):
                             if ws.cell(row=r, column=2).value == target_label:
                                 target_row = r
                                 break
-                        
                         if not target_row:
                             return
                         
-                        # 데이터 수만큼 바로 밑에 새 행 개설 및 서식 복사
-                        # 첫 행은 기존 빈칸 활용, 초과분만 신규 행 개설
                         for i, task in enumerate(task_list):
                             current_r = target_row + 1 + i
-                            if i >= 1: # 기본 제공 양식 칸 초과 시 행 삽입
+                            if i >= 1:
                                 ws.insert_rows(current_r, 1)
-                                # 상단 행의 셀 서식 상속
                                 for col_idx in range(1, ws.max_column + 1):
                                     source_cell = ws.cell(row=current_r-1, column=col_idx)
                                     new_cell = ws.cell(row=current_r, column=col_idx)
                                     new_cell.font = Font(name=source_cell.font.name, size=source_cell.font.size)
                                     new_cell.border = Border(left=source_cell.border.left, right=source_cell.border.right, top=source_cell.border.top, bottom=source_cell.border.bottom)
-                                    new_cell.fill = PatternFill(fill_type=source_cell.fill.fill_type, start_color=source_cell.fill.start_color, end_color=source_cell.fill.end_color)
+                                    new_cell.fill = PatternFill(fill_type=source_cell.fill.fill_type, start_color=source_color, end_color=source_cell.fill.end_color)
                                     new_cell.alignment = Alignment(horizontal=source_cell.alignment.horizontal, vertical=source_cell.alignment.vertical)
                             
-                            # 데이터 밸류 꽂아넣기
                             if is_plan:
-                                ws.cell(row=current_r, column=2, value=f"{i+1:02d}") # 번호
-                                ws.cell(row=current_r, column=3, value=task) # 계획내용
+                                ws.cell(row=current_r, column=2, value=f"{i+1:02d}")
+                                ws.cell(row=current_r, column=3, value=task)
                             else:
-                                ws.cell(row=current_r, column=2, value=task[0]) # 업무내용
-                                ws.cell(row=current_r, column=19, value=task[1]) # 비고/시간
+                                ws.cell(row=current_r, column=2, value=task[0])
+                                ws.cell(row=current_r, column=19, value=task[1])
                     
-                    # 역순으로 채워야 상단 행 번호 인덱스가 꼬이지 않음
                     insert_and_fill("익일 업무 계획", next_tasks, is_plan=True)
                     insert_and_fill("오후", afternoon_tasks)
                     insert_and_fill("오전", morning_tasks)
                     
-                    # 메인 파일로 시트 복사 이동
                     final_wb._add_sheet(ws)
                 
-                # 초기 빈 시트 제거 및 저장
                 if len(final_wb.sheetnames) > 1 and "Sheet" in final_wb.sheetnames:
                     final_wb.remove(default_sheet)
                     
                 final_wb.save(output_buffer)
-                
                 st.success("✨ 회사 양식 맞춤형 보고서 빌드가 완료되었습니다! 아래 다운로드 버튼을 누르세요.")
                 
                 st.download_button(
@@ -244,4 +233,4 @@ with col2:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
             except Exception as ex:
-                st.error(f"엑셀 렌더링 중 오류 발생: {ex}. 깃허브에 template.xlsx가 정확한 위치에 있는지 확인해 주세요.")
+                st.error(f"엑셀 렌더링 중 오류 발생: {ex}")
