@@ -18,7 +18,7 @@ except Exception as e:
     st.error("구글 시트 연결에 실패했습니다. Secrets 설정 및 시트 공유 권한을 확인해주세요.")
     df = pd.DataFrame(columns=["날짜", "작성자", "직급", "업무구분", "고객사_프로젝트명", "시작시간", "종료시간", "업무량/내용", "진행상황"])
 
-# 과거 기록 자동완성용 프로젝트 리스트 깔끔하게 추출 (KeyError 완전 패치)
+# 과거 기록 자동완성용 프로젝트 리스트 추출 (오류 유발 코드 완전 제거)
 existing_projects = []
 if not df.empty and "고객사_프로젝트명" in df.columns:
     existing_projects = sorted(df["고객사_프로젝트명"].dropna().unique().tolist())
@@ -123,7 +123,7 @@ with col1:
                 st.rerun()
 
 # ----------------------------------------------------
-# 오른쪽 화면: 회사 맞춤형 양식틀 유지 엑셀 다운로드 엔진
+# 오른쪽 화면: 회사 맞춤형 양식틀 유지 엑셀 다운로드 엔진 (정밀 매핑)
 # ----------------------------------------------------
 with col2:
     st.header("📥 일일 업무보고서 다운로드")
@@ -166,8 +166,9 @@ with col2:
                     next_tasks = []
                     
                     for _, row in day_data.iterrows():
+                        p_name = row["고객사_프로젝트명"] if "고객사_프로젝트명" in row and pd.notna(row["고객사_프로젝트명"]) else ""
                         time_str = f"{row['시작시간']} ~ {row['종료시간']}"
-                        content_str = f"[{row['고객사_프로젝트명']}] {row['업무량/내용']} ({row['진행상황']})"
+                        content_str = f"[{p_name}] {row['업무량/내용']} ({row['진행상황']})"
                         
                         if row['업무구분'] == "내일 계획":
                             next_tasks.append(content_str)
@@ -178,12 +179,12 @@ with col2:
                             else:
                                 afternoon_tasks.append((content_str, time_str))
                     
-                    # 📌 알려주신 정확한 양식 고정 좌표에 데이터 기록
-                    ws["L2"] = date_val          # 작성일
-                    ws["L4"] = selected_author  # 작성자
-                    ws["L6"] = current_rank     # 직급
+                    # 📌 지정해 주신 절대 고정 좌표에 데이터 기록
+                    ws["L2"] = date_val          # 작성일 (L2)
+                    ws["L4"] = selected_author  # 작성자 (L4)
+                    ws["L6"] = current_rank     # 직급 (L6)
                     
-                    # 동적 행 삽입 및 서식 복사 함수
+                    # 동적 행 삽입 및 서식 복사 함수 (C10 기준 매핑 반영)
                     def insert_and_fill(target_label, task_list, is_plan=False):
                         target_row = None
                         for r in range(1, ws.max_row + 1):
@@ -191,9 +192,8 @@ with col2:
                                 target_row = r
                                 break
                         
-                        # 오전(C10 기준) 매핑일 경우 하드코딩 처리 보완
                         if target_label == "오전" and not target_row:
-                            target_row = 9
+                            target_row = 9  # C10 적재를 위한 기준 행 설정
                         
                         if not target_row:
                             return
@@ -223,7 +223,7 @@ with col2:
                                 ws.cell(row=current_r, column=3, value=task[0])
                                 ws.cell(row=current_r, column=19, value=task[1])
                     
-                    # 행 인덱스 꼬임 방지를 위해 아래쪽부터 적재
+                    # 행 인덱스 유지를 위해 아래쪽부터 데이터 채움
                     insert_and_fill("익일 업무 계획", next_tasks, is_plan=True)
                     insert_and_fill("오후", afternoon_tasks)
                     insert_and_fill("오전", morning_tasks)
