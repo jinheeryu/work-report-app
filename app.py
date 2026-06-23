@@ -18,16 +18,15 @@ except Exception as e:
     st.error("구글 시트 연결에 실패했습니다. Secrets 설정 및 시트 공유 권한을 확인해주세요.")
     df = pd.DataFrame(columns=["날짜", "작성자", "직급", "업무구분", "고객사_프로젝트명", "시작시간", "종료시간", "업무량/내용", "진행상황"])
 
-# 과거 기록 자동완성용 프로젝트 리스트 추출
+# 과거 기록 자동완성용 프로젝트 리스트 안전하게 추출
+existing_projects = []
 if not df.empty and "고객사_프로젝트명" in df.columns:
-    existing_projects = sorted(df["고객사_projects"].dropna().unique().tolist()) if "고객사_projects" in df.columns else sorted(df["고객사_프로젝트명"].dropna().unique().tolist())
-else:
-    existing_projects = []
+    existing_projects = sorted(df["고객사_프로젝트명"].dropna().unique().tolist())
 
 col1, col2 = st.columns([1, 1.2])
 
 # ----------------------------------------------------
-# 왼쪽 화면: 업무 및 계획 입력 폼 (오류 전면 수정본)
+# 왼쪽 화면: 업무 및 계획 입력 폼
 # ----------------------------------------------------
 with col1:
     st.header("📥 업무 내역 입력")
@@ -51,7 +50,7 @@ with col1:
             
         st.write("---")
         
-        # 2. [유지] 프로젝트명 입력 방식 (수정하지 않음)
+        # 🔗 프로젝트명 입력 방식 (잘 작동하던 부분 유지)
         st.write("🔗 **고객사_프로젝트명 입력**")
         if existing_projects:
             selected_hint = st.selectbox(
@@ -71,16 +70,22 @@ with col1:
         
         st.write("---")
         
-        # 3. [전면 개편] 15분 단위 드롭다운 시간 선택 UI (서버 오류 완전 방지)
-        st.write("⏰ **작업 시간 선택 (15분 단위 선택형)**")
-        # 00:00부터 23:45까지 15분 단위 리스트 자동 생성
-        time_options = [f"{h:02d}:{m:02d}" for h in range(24) for m in (0, 15, 30, 45)]
+        # ⏰ [요구사항 반영] 작업 시간 선택 범위를 09:00 ~ 18:00로 제한
+        st.write("⏰ **작업 시간 선택 (09:00 ~ 18:00 범위, 15분 단위)**")
+        
+        # 09:00부터 18:00까지만 15분 단위 리스트 필터링 생성
+        time_options = []
+        for h in range(9, 19): # 9시부터 18시까지
+            for m in (0, 15, 30, 45):
+                if h == 18 and m > 0: # 18:00 까지만 포함
+                    continue
+                time_options.append(f"{h:02d}:{m:02d}")
         
         time_col1, time_col2 = st.columns(2)
         with time_col1:
-            start_time_str = st.selectbox("작업 시작 시간", time_options, index=36) # 기본값 09:00
+            start_time_str = st.selectbox("작업 시작 시간", time_options, index=0)   # 기본값 09:00
         with time_col2:
-            end_time_str = st.selectbox("작업 종료 시간", time_options, index=72)   # 기본값 18:00
+            end_time_str = st.selectbox("작업 종료 시간", time_options, index=len(time_options)-1) # 기본값 18:00
             
         description = st.text_area("업무량/내용 상세 기록")
         
@@ -92,7 +97,6 @@ with col1:
         submit_button = st.form_submit_button("💾 시트에 기록하기")
         
         if submit_button:
-            # 시간 비교를 위해 임시 분리
             start_h, start_m = map(int, start_time_str.split(':'))
             end_h, end_m = map(int, end_time_str.split(':'))
             
@@ -121,7 +125,7 @@ with col1:
                 st.rerun()
 
 # ----------------------------------------------------
-# 오른쪽 화면: 회사 맞춤형 양식틀 유지 엑셀 다운로드 엔진 (오타 전면 수정)
+# 오른쪽 화면: 회사 맞춤형 양식틀 유지 엑셀 다운로드 엔진
 # ----------------------------------------------------
 with col2:
     st.header("📥 일일 업무보고서 다운로드")
