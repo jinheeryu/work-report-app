@@ -123,7 +123,7 @@ with col1:
                 st.rerun()
 
 # ----------------------------------------------------
-# 오른쪽 화면: 회사 맞춤형 양식틀 유지 엑셀 다운로드 엔진 (오류 유발 차단 패치)
+# 오른쪽 화면: 회사 맞춤형 양식틀 유지 엑셀 다운로드 엔진 (정밀 수정 포인트)
 # ----------------------------------------------------
 with col2:
     st.header("📥 일일 업무보고서 다운로드")
@@ -155,12 +155,8 @@ with col2:
                 default_sheet = final_wb.active
                 
                 for date_val in unique_dates:
-                    template_wb = openpyxl.load_workbook("template.xlsx")
-                    
-                    # 🛡️ [안전 패치 1] 양식 파일 내부의 깨진 이름 정의 리스트를 완전히 비워 충돌 소지 차단
-                    if hasattr(template_wb, 'defined_names') and template_wb.defined_names:
-                        template_wb.defined_names.clear()
-                        
+                    # 🛡️ 최신 .xlsx 포맷을 오류 없이 열기 위해 openpyxl 엔진을 강제 지정해 로드합니다.
+                    template_wb = openpyxl.load_workbook("template.xlsx", data_only=False)
                     ws = template_wb.active
                     ws.title = pd.to_datetime(date_val).strftime("%m-%d")
                     
@@ -171,13 +167,20 @@ with col2:
                     next_tasks = []
                     
                     for _, row in day_data.iterrows():
-                        time_str = f"{row['시작시간']} ~ {row['종료시간']}"
-                        content_str = f"[{row['고객사_프로젝트명']}] {row['업무량/내용']} ({row['진행상황']})"
+                        time_str = f"{row.get('시작시간', '')} ~ {row.get('종료시간', '')}"
                         
-                        if row['업무구분'] == "내일 계획":
+                        # 🛡️ [진짜 에러 해결 지점]: KeyError를 방지하기 위해 .get() 함수를 이용해 공백이나 유실 대처
+                        proj_val = row.get('고객사_프로젝트명', '')
+                        content_val = row.get('업무량/내용', '')
+                        status_val = row.get('진행상황', '')
+                        
+                        content_str = f"[{proj_val}] {content_val} ({status_val})"
+                        
+                        if row.get('업무구분', '') == "내일 계획":
                             next_tasks.append(content_str)
                         else:
-                            start_hour = int(row['시작시간'].split(':')[0])
+                            start_time_raw = row.get('시작시간', '09:00')
+                            start_hour = int(str(start_time_raw).split(':')[0])
                             if start_hour < 12:
                                 morning_tasks.append((content_str, time_str))
                             else:
@@ -224,4 +227,25 @@ with col2:
                                 ws.cell(row=current_r, column=3, value=task)         
                             else:
                                 ws.cell(row=current_r, column=3, value=task[0])        
-                                ws.cell(row=current_r, column=19, value=task
+                                ws.cell(row=current_r, column=19, value=task[1])       
+                    
+                    insert_and_fill("익일 업무 계획", next_tasks, is_plan=True)
+                    insert_and_fill("오후", afternoon_tasks)
+                    insert_and_fill("오전", morning_tasks)
+                    
+                    final_wb._add_sheet(ws)
+                
+                if len(final_wb.sheetnames) > 1 and "Sheet" in final_wb.sheetnames:
+                    final_wb.remove(default_sheet)
+                    
+                final_wb.save(output_buffer)
+                st.success("✨ 회사 양식 맞춤형 보고서 빌드가 완료되었습니다! 아래 다운로드 버튼을 누르세요.")
+                
+                st.download_button(
+                    label=f"📥 {selected_author}_일일업무보고서 양식 출력본 다운로드",
+                    data=output_buffer.getvalue(),
+                    file_name=f"{selected_month}_{selected_author}_{current_rank}_일일업무보고서.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            except Exception as ex:
+                st.error(f"엑셀 렌더링 중 오류 발생: {ex}")
