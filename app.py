@@ -5,6 +5,8 @@ import datetime
 import io
 import openpyxl
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+# 🛡️ 다운로드 오류 해결을 위해 메타데이터 오브젝트만 임포트 추가
+from openpyxl.workbook.defined_name import DefinedNames
 
 # 0. 웹 앱 기본 설정
 st.set_page_config(page_title="팀 종합 업무보고 시스템", layout="wide")
@@ -26,7 +28,7 @@ if not df.empty and "고객사_프로젝트명" in df.columns:
 col1, col2 = st.columns([1, 1.2])
 
 # ----------------------------------------------------
-# 왼쪽 화면: 업무 및 계획 입력 폼
+# 왼쪽 화면: 업무 및 계획 입력 폼 (그대로 유지)
 # ----------------------------------------------------
 with col1:
     st.header("📥 업무 내역 입력")
@@ -123,7 +125,7 @@ with col1:
                 st.rerun()
 
 # ----------------------------------------------------
-# 오른쪽 화면: 회사 맞춤형 양식틀 유지 엑셀 다운로드 엔진 (에러 완전 패치)
+# 오른쪽 화면: 회사 맞춤형 양식틀 유지 엑셀 다운로드 엔진 (집중 수정한 부분)
 # ----------------------------------------------------
 with col2:
     st.header("📥 일일 업무보고서 다운로드")
@@ -234,6 +236,9 @@ with col2:
                 if len(final_wb.sheetnames) > 1 and "Sheet" in final_wb.sheetnames:
                     final_wb.remove(default_sheet)
                     
+                # 🛡️ [집중 수정 포인트] 저장 직전 이름 정의 초기화로 KeyError 원천 차단
+                final_wb.defined_names = DefinedNames()
+                
                 final_wb.save(output_buffer)
                 st.success("✨ 회사 양식 맞춤형 보고서 빌드가 완료되었습니다! 아래 다운로드 버튼을 누르세요.")
                 
