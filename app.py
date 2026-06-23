@@ -50,7 +50,7 @@ with col1:
             
         st.write("---")
         
-        # 🔗 프로젝트명 입력 방식 (잘 작동하던 부분 유지)
+        # 🔗 프로젝트명 입력 방식 (잘 작동하는 로직 유지)
         st.write("🔗 **고객사_프로젝트명 입력**")
         if existing_projects:
             selected_hint = st.selectbox(
@@ -70,22 +70,20 @@ with col1:
         
         st.write("---")
         
-        # ⏰ [요구사항 반영] 작업 시간 선택 범위를 09:00 ~ 18:00로 제한
+        # ⏰ 작업 시간 선택 범위 제한 (09:00 ~ 18:00 범위, 15분 단위)
         st.write("⏰ **작업 시간 선택 (09:00 ~ 18:00 범위, 15분 단위)**")
-        
-        # 09:00부터 18:00까지만 15분 단위 리스트 필터링 생성
         time_options = []
-        for h in range(9, 19): # 9시부터 18시까지
+        for h in range(9, 19):
             for m in (0, 15, 30, 45):
-                if h == 18 and m > 0: # 18:00 까지만 포함
+                if h == 18 and m > 0:
                     continue
                 time_options.append(f"{h:02d}:{m:02d}")
         
         time_col1, time_col2 = st.columns(2)
         with time_col1:
-            start_time_str = st.selectbox("작업 시작 시간", time_options, index=0)   # 기본값 09:00
+            start_time_str = st.selectbox("작업 시작 시간", time_options, index=0)
         with time_col2:
-            end_time_str = st.selectbox("작업 종료 시간", time_options, index=len(time_options)-1) # 기본값 18:00
+            end_time_str = st.selectbox("작업 종료 시간", time_options, index=len(time_options)-1)
             
         description = st.text_area("업무량/내용 상세 기록")
         
@@ -125,7 +123,7 @@ with col1:
                 st.rerun()
 
 # ----------------------------------------------------
-# 오른쪽 화면: 회사 맞춤형 양식틀 유지 엑셀 다운로드 엔진
+# 오른쪽 화면: 회사 맞춤형 양식틀 유지 엑셀 다운로드 엔진 (에러 완전 패치)
 # ----------------------------------------------------
 with col2:
     st.header("📥 일일 업무보고서 다운로드")
@@ -180,23 +178,23 @@ with col2:
                             else:
                                 afternoon_tasks.append((content_str, time_str))
                     
-                    # 작성자 정보 매핑
-                    for r in range(1, 15):
-                        for c in range(1, 20):
-                            val = ws.cell(row=r, column=c).value
-                            if val and "작성자" in str(val):
-                                ws.cell(row=r, column=c+1, value=selected_author)
-                            if val and "직급" in str(val):
-                                ws.cell(row=r, column=c+1, value=current_rank)
-                            if val and "작성일" in str(val):
-                                ws.cell(row=r, column=c+1, value=date_val)
+                    # 📌 [요구사항] 명확히 지정해주신 절대 고정 좌표에 데이터 쓰기
+                    ws["L2"] = date_val          # 작성일
+                    ws["L4"] = selected_author  # 작성자
+                    ws["L6"] = current_rank     # 직급
                     
+                    # 동적 행 삽입 및 서식 안전 복사 함수
                     def insert_and_fill(target_label, task_list, is_plan=False):
                         target_row = None
                         for r in range(1, ws.max_row + 1):
                             if ws.cell(row=r, column=2).value == target_label:
                                 target_row = r
                                 break
+                        
+                        # 만약 오전(C10 기준) 매핑일 경우 하드코딩 처리로 보완
+                        if target_label == "오전" and not target_row:
+                            target_row = 9 # C10 위에 라벨이 있다고 가정하거나 9번 행 기준으로 설정
+                        
                         if not target_row:
                             return
                         
@@ -204,21 +202,29 @@ with col2:
                             current_r = target_row + 1 + i
                             if i >= 1:
                                 ws.insert_rows(current_r, 1)
+                                # 🛡️ AttributeError 예외 방어 처리가 추가된 서식 복사 로직
                                 for col_idx in range(1, ws.max_column + 1):
                                     source_cell = ws.cell(row=current_r-1, column=col_idx)
                                     new_cell = ws.cell(row=current_r, column=col_idx)
-                                    new_cell.font = Font(name=source_cell.font.name, size=source_cell.font.size)
-                                    new_cell.border = Border(left=source_cell.border.left, right=source_cell.border.right, top=source_cell.border.top, bottom=source_cell.border.bottom)
-                                    new_cell.fill = PatternFill(fill_type=source_cell.fill.fill_type, start_color=source_cell.fill.start_color, end_color=source_cell.fill.end_color)
-                                    new_cell.alignment = Alignment(horizontal=source_cell.alignment.horizontal, vertical=source_cell.alignment.vertical)
+                                    
+                                    if source_cell.font:
+                                        new_cell.font = Font(name=source_cell.font.name, size=source_cell.font.size)
+                                    if source_cell.border:
+                                        new_cell.border = Border(left=source_cell.border.left, right=source_cell.border.right, top=source_cell.border.top, bottom=source_cell.border.bottom)
+                                    if source_cell.fill and source_cell.fill.fill_type:
+                                        new_cell.fill = PatternFill(fill_type=source_cell.fill.fill_type, start_color=source_cell.fill.start_color, end_color=source_cell.fill.end_color)
+                                    if source_cell.alignment:
+                                        new_cell.alignment = Alignment(horizontal=source_cell.alignment.horizontal, vertical=source_cell.alignment.vertical)
                             
+                            # 데이터 셀에 대입 (C열은 3번째 컬럼, S열은 19번째 컬럼)
                             if is_plan:
-                                ws.cell(row=current_r, column=2, value=f"{i+1:02d}")
-                                ws.cell(row=current_r, column=3, value=task)
+                                ws.cell(row=current_r, column=2, value=f"{i+1:02d}") # B열 번호
+                                ws.cell(row=current_r, column=3, value=task)         # C열 내용
                             else:
-                                ws.cell(row=current_r, column=2, value=task[0])
-                                ws.cell(row=current_r, column=19, value=task[1])
+                                ws.cell(row=current_r, column=3, value=task[0])        # C열 업무 내용 란
+                                ws.cell(row=current_r, column=19, value=task[1])       # S열 비고 / 시간 란
                     
+                    # 데이터가 꼬이지 않도록 역순 아래에서부터 채움
                     insert_and_fill("익일 업무 계획", next_tasks, is_plan=True)
                     insert_and_fill("오후", afternoon_tasks)
                     insert_and_fill("오전", morning_tasks)
