@@ -20,7 +20,7 @@ except Exception as e:
 
 # 과거 기록 자동완성용 프로젝트 리스트 추출
 if not df.empty and "고객사_프로젝트명" in df.columns:
-    existing_projects = sorted(df["고객사_프로젝트명"].dropna().unique().tolist())
+    existing_projects = sorted(df["고객사_projects"].dropna().unique().tolist()) if "고객사_projects" in df.columns else sorted(df["고객사_프로젝트명"].dropna().unique().tolist())
 else:
     existing_projects = []
 
@@ -51,7 +51,7 @@ with col1:
             
         st.write("---")
         
-        # ✨ [오류 수정] 절대 지워지지 않는 서치 및 입력 UI 조합
+        # 2. [유지] 프로젝트명 입력 방식 (수정하지 않음)
         st.write("🔗 **고객사_프로젝트명 입력**")
         if existing_projects:
             selected_hint = st.selectbox(
@@ -59,12 +59,10 @@ with col1:
                 options=["-- 새로 직접 입력하기 --"] + existing_projects,
                 index=0
             )
-            # 리스트에서 항목을 고르면 아래 텍스트 입력창에 자동으로 글자가 채워지도록 연동
             default_project_text = "" if selected_hint == "-- 새로 직접 입력하기 --" else selected_hint
         else:
             default_project_text = ""
             
-        # 실제 데이터로 저장되는 진짜 입력창 (엔터를 치거나 다른 곳을 눌러도 절대 지워지지 않음)
         project_name = st.text_input(
             "✍️ 실제 등록할 고객사_프로젝트명 (필수)",
             value=default_project_text,
@@ -73,17 +71,17 @@ with col1:
         
         st.write("---")
         
-        # 🕒 [오류 수정] 시계 UI 접근성 강화 및 타임 입력 가이드
-        st.write("⏰ **작업 시간 선택 (우측 끝 '시계 아이콘'을 누르면 시계 팝업이 뜹니다)**")
+        # 3. [전면 개편] 15분 단위 드롭다운 시간 선택 UI (서버 오류 완전 방지)
+        st.write("⏰ **작업 시간 선택 (15분 단위 선택형)**")
+        # 00:00부터 23:45까지 15분 단위 리스트 자동 생성
+        time_options = [f"{h:02d}:{m:02d}" for h in range(24) for m in (0, 15, 30, 45)]
+        
         time_col1, time_col2 = st.columns(2)
         with time_col1:
-            start_time_input = st.time_input("작업 시작 시간", datetime.time(9, 0))
+            start_time_str = st.selectbox("작업 시작 시간", time_options, index=36) # 기본값 09:00
         with time_col2:
-            end_time_input = st.time_input("작업 종료 시간", datetime.time(18, 0))
+            end_time_str = st.selectbox("작업 종료 시간", time_options, index=72)   # 기본값 18:00
             
-        start_time_str = start_time_input.strftime("%H:%M")
-        end_time_str = end_time_input.strftime("%H:%M")
-        
         description = st.text_area("업무량/내용 상세 기록")
         
         if auto_task_type == "오늘 업무":
@@ -94,14 +92,17 @@ with col1:
         submit_button = st.form_submit_button("💾 시트에 기록하기")
         
         if submit_button:
-            if start_time_input >= end_time_input:
+            # 시간 비교를 위해 임시 분리
+            start_h, start_m = map(int, start_time_str.split(':'))
+            end_h, end_m = map(int, end_time_str.split(':'))
+            
+            if (start_h > end_h) or (start_h == end_h and start_m >= end_m):
                 st.error("종료 시간이 시작 시간보다 빠르거나 같을 수 없습니다!")
             elif not author_name.strip():
                 st.warning("작성자 성명을 입력해주세요!")
             elif not project_name.strip():
                 st.warning("고객사_프로젝트명을 입력해주세요!")
             else:
-                # 데이터 프레임 구성 (9개 칼럼 일치)
                 new_data = pd.DataFrame([{
                     "날짜": date_input.strftime("%Y-%m-%d"),
                     "작성자": author_name.strip(),
@@ -120,7 +121,7 @@ with col1:
                 st.rerun()
 
 # ----------------------------------------------------
-# 오른쪽 화면: 회사 맞춤형 양식틀 유지 엑셀 다운로드 엔진
+# 오른쪽 화면: 회사 맞춤형 양식틀 유지 엑셀 다운로드 엔진 (오타 전면 수정)
 # ----------------------------------------------------
 with col2:
     st.header("📥 일일 업무보고서 다운로드")
@@ -175,7 +176,7 @@ with col2:
                             else:
                                 afternoon_tasks.append((content_str, time_str))
                     
-                    # 작성자 정보 매핑 검색
+                    # 작성자 정보 매핑
                     for r in range(1, 15):
                         for c in range(1, 20):
                             val = ws.cell(row=r, column=c).value
@@ -204,7 +205,7 @@ with col2:
                                     new_cell = ws.cell(row=current_r, column=col_idx)
                                     new_cell.font = Font(name=source_cell.font.name, size=source_cell.font.size)
                                     new_cell.border = Border(left=source_cell.border.left, right=source_cell.border.right, top=source_cell.border.top, bottom=source_cell.border.bottom)
-                                    new_cell.fill = PatternFill(fill_type=source_cell.fill.fill_type, start_color=source_color, end_color=source_cell.fill.end_color)
+                                    new_cell.fill = PatternFill(fill_type=source_cell.fill.fill_type, start_color=source_cell.fill.start_color, end_color=source_cell.fill.end_color)
                                     new_cell.alignment = Alignment(horizontal=source_cell.alignment.horizontal, vertical=source_cell.alignment.vertical)
                             
                             if is_plan:
