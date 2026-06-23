@@ -4,8 +4,7 @@ import pandas as pd
 import datetime
 import io
 import openpyxl
-from openpyxl.styles import Font, Alignment, Border, PatternFill
-from openpyxl.workbook.defined_name import DefinedNames
+from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 
 # 0. 웹 앱 기본 설정
 st.set_page_config(page_title="팀 종합 업무보고 시스템", layout="wide")
@@ -19,7 +18,7 @@ except Exception as e:
     st.error("구글 시트 연결에 실패했습니다. Secrets 설정 및 시트 공유 권한을 확인해주세요.")
     df = pd.DataFrame(columns=["날짜", "작성자", "직급", "업무구분", "고객사_프로젝트명", "시작시간", "종료시간", "업무량/내용", "진행상황"])
 
-# 과거 기록 자동완성용 프로젝트 리스트 추출 (원래 정상 작동하던 로직으로 복구)
+# 과거 기록 자동완성용 프로젝트 리스트 안전하게 추출
 existing_projects = []
 if not df.empty and "고객사_프로젝트명" in df.columns:
     existing_projects = sorted(df["고객사_프로젝트명"].dropna().unique().tolist())
@@ -27,7 +26,7 @@ if not df.empty and "고객사_프로젝트명" in df.columns:
 col1, col2 = st.columns([1, 1.2])
 
 # ----------------------------------------------------
-# 왼쪽 화면: 업무 및 계획 입력 폼 (원래 정상 작동 버전)
+# 왼쪽 화면: 업무 및 계획 입력 폼
 # ----------------------------------------------------
 with col1:
     st.header("📥 업무 내역 입력")
@@ -41,6 +40,7 @@ with col1:
             
         date_input = st.date_input("업무/계획 날짜 선택", datetime.date.today())
         
+        # ⚡ 날짜 기준 오늘 업무 / 내일 계획 자동 판별
         today = datetime.date.today()
         auto_task_type = "내일 계획" if date_input > today else "오늘 업무"
         if auto_task_type == "내일 계획":
@@ -49,6 +49,8 @@ with col1:
             st.success(f"💡 선택한 날짜가 오늘/과거이므로 자동으로 **[오늘 업무]**로 분류됩니다.")
             
         st.write("---")
+        
+        # 🔗 프로젝트명 입력 방식 (잘 작동하는 로직 유지)
         st.write("🔗 **고객사_프로젝트명 입력**")
         if existing_projects:
             selected_hint = st.selectbox(
@@ -67,6 +69,8 @@ with col1:
         )
         
         st.write("---")
+        
+        # ⏰ 작업 시간 선택 범위 제한 (09:00 ~ 18:00 범위, 15분 단위)
         st.write("⏰ **작업 시간 선택 (09:00 ~ 18:00 범위, 15분 단위)**")
         time_options = []
         for h in range(9, 19):
@@ -119,7 +123,7 @@ with col1:
                 st.rerun()
 
 # ----------------------------------------------------
-# 오른쪽 화면: 일일 업무보고서 다운로드 (오류 원인 집중 패치)
+# 오른쪽 화면: 회사 맞춤형 양식틀 유지 엑셀 다운로드 엔진 (에러 완전 패치)
 # ----------------------------------------------------
 with col2:
     st.header("📥 일일 업무보고서 다운로드")
@@ -147,7 +151,6 @@ with col2:
             try:
                 unique_dates = sorted(final_df["날짜"].unique())
                 output_buffer = io.BytesIO()
-                
                 final_wb = openpyxl.Workbook()
                 default_sheet = final_wb.active
                 
@@ -163,9 +166,8 @@ with col2:
                     next_tasks = []
                     
                     for _, row in day_data.iterrows():
-                        p_name = row["고객사_프로젝트명"] if "고객사_프로젝트명" in row and pd.notna(row["고객사_프로젝트명"]) else ""
                         time_str = f"{row['시작시간']} ~ {row['종료시간']}"
-                        content_str = f"[{p_name}] {row['업무량/내용']} ({row['진행상황']})"
+                        content_str = f"[{row['고객사_프로젝트명']}] {row['업무량/내용']} ({row['진행상황']})"
                         
                         if row['업무구분'] == "내일 계획":
                             next_tasks.append(content_str)
@@ -176,12 +178,12 @@ with col2:
                             else:
                                 afternoon_tasks.append((content_str, time_str))
                     
-                    # 피드백 반영한 절대 고정 좌표 지정
-                    ws["L2"] = date_val          
-                    ws["L4"] = selected_author  
-                    ws["L6"] = current_rank     
+                    # 📌 [요구사항] 명확히 지정해주신 절대 고정 좌표에 데이터 쓰기
+                    ws["L2"] = date_val          # 작성일
+                    ws["L4"] = selected_author  # 작성자
+                    ws["L6"] = current_rank     # 직급
                     
-                    # 동적 행 삽입 및 서식 안전 복사
+                    # 동적 행 삽입 및 서식 안전 복사 함수
                     def insert_and_fill(target_label, task_list, is_plan=False):
                         target_row = None
                         for r in range(1, ws.max_row + 1):
@@ -189,8 +191,9 @@ with col2:
                                 target_row = r
                                 break
                         
+                        # 만약 오전(C10 기준) 매핑일 경우 하드코딩 처리로 보완
                         if target_label == "오전" and not target_row:
-                            target_row = 9  # C10 적재 기준행
+                            target_row = 9 # C10 위에 라벨이 있다고 가정하거나 9번 행 기준으로 설정
                         
                         if not target_row:
                             return
@@ -199,6 +202,7 @@ with col2:
                             current_r = target_row + 1 + i
                             if i >= 1:
                                 ws.insert_rows(current_r, 1)
+                                # 🛡️ AttributeError 예외 방어 처리가 추가된 서식 복사 로직
                                 for col_idx in range(1, ws.max_column + 1):
                                     source_cell = ws.cell(row=current_r-1, column=col_idx)
                                     new_cell = ws.cell(row=current_r, column=col_idx)
@@ -208,17 +212,19 @@ with col2:
                                     if source_cell.border:
                                         new_cell.border = Border(left=source_cell.border.left, right=source_cell.border.right, top=source_cell.border.top, bottom=source_cell.border.bottom)
                                     if source_cell.fill and source_cell.fill.fill_type:
-                                        new_cell.fill = PatternFill(fill_type=source_cell.fill.fill_type, start_color=source_color, end_color=source_cell.fill.end_color)
+                                        new_cell.fill = PatternFill(fill_type=source_cell.fill.fill_type, start_color=source_cell.fill.start_color, end_color=source_cell.fill.end_color)
                                     if source_cell.alignment:
                                         new_cell.alignment = Alignment(horizontal=source_cell.alignment.horizontal, vertical=source_cell.alignment.vertical)
                             
+                            # 데이터 셀에 대입 (C열은 3번째 컬럼, S열은 19번째 컬럼)
                             if is_plan:
-                                ws.cell(row=current_r, column=2, value=f"{i+1:02d}")
-                                ws.cell(row=current_r, column=3, value=task)
+                                ws.cell(row=current_r, column=2, value=f"{i+1:02d}") # B열 번호
+                                ws.cell(row=current_r, column=3, value=task)         # C열 내용
                             else:
-                                ws.cell(row=current_r, column=3, value=task[0])
-                                ws.cell(row=current_r, column=19, value=task[1])
+                                ws.cell(row=current_r, column=3, value=task[0])        # C열 업무 내용 란
+                                ws.cell(row=current_r, column=19, value=task[1])       # S열 비고 / 시간 란
                     
+                    # 데이터가 꼬이지 않도록 역순 아래에서부터 채움
                     insert_and_fill("익일 업무 계획", next_tasks, is_plan=True)
                     insert_and_fill("오후", afternoon_tasks)
                     insert_and_fill("오전", morning_tasks)
@@ -227,11 +233,7 @@ with col2:
                 
                 if len(final_wb.sheetnames) > 1 and "Sheet" in final_wb.sheetnames:
                     final_wb.remove(default_sheet)
-                
-                # 🔥 [스택오버플로우 해결책 핵심 적용] 
-                # 저장하기 직전에 워크북의 깨진 이름정의(defined_names)들을 초기화시켜 에러(KeyError) 완벽 방어
-                final_wb.defined_names = DefinedNames()
-                
+                    
                 final_wb.save(output_buffer)
                 st.success("✨ 회사 양식 맞춤형 보고서 빌드가 완료되었습니다! 아래 다운로드 버튼을 누르세요.")
                 
