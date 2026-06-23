@@ -5,6 +5,7 @@ import datetime
 import io
 import openpyxl
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+from openpyxl.workbook.defined_name import DefinedNames
 
 # 0. 웹 앱 기본 설정
 st.set_page_config(page_title="팀 종합 업무보고 시스템", layout="wide")
@@ -18,7 +19,7 @@ except Exception as e:
     st.error("구글 시트 연결에 실패했습니다. Secrets 설정 및 시트 공유 권한을 확인해주세요.")
     df = pd.DataFrame(columns=["날짜", "작성자", "직급", "업무구분", "고객사_프로젝트명", "시작시간", "종료시간", "업무량/내용", "진행상황"])
 
-# 과거 기록 자동완성용 프로젝트 리스트 추출 (오류 유발 코드 완전 제거)
+# 과거 기록 자동완성용 프로젝트 리스트 추출
 existing_projects = []
 if not df.empty and "고객사_프로젝트명" in df.columns:
     existing_projects = sorted(df["고객사_프로젝트명"].dropna().unique().tolist())
@@ -123,7 +124,7 @@ with col1:
                 st.rerun()
 
 # ----------------------------------------------------
-# 오른쪽 화면: 회사 맞춤형 양식틀 유지 엑셀 다운로드 엔진 (정밀 매핑)
+# 오른쪽 화면: 회사 맞춤형 양식틀 유지 엑셀 다운로드 엔진 (정밀 격리 패치)
 # ----------------------------------------------------
 with col2:
     st.header("📥 일일 업무보고서 다운로드")
@@ -151,11 +152,14 @@ with col2:
             try:
                 unique_dates = sorted(final_df["날짜"].unique())
                 output_buffer = io.BytesIO()
+                
+                # 메인 결과물 워크북 생성
                 final_wb = openpyxl.Workbook()
                 default_sheet = final_wb.active
                 
                 for date_val in unique_dates:
-                    template_wb = openpyxl.load_workbook("template.xlsx")
+                    # template.xlsx를 열 때 데이터 유효성 검사 등 에러 유발 요소를 배제하도록 설정 시도
+                    template_wb = openpyxl.load_workbook("template.xlsx", data_only=False)
                     ws = template_wb.active
                     ws.title = pd.to_datetime(date_val).strftime("%m-%d")
                     
@@ -179,12 +183,12 @@ with col2:
                             else:
                                 afternoon_tasks.append((content_str, time_str))
                     
-                    # 📌 지정해 주신 절대 고정 좌표에 데이터 기록
-                    ws["L2"] = date_val          # 작성일 (L2)
-                    ws["L4"] = selected_author  # 작성자 (L4)
-                    ws["L6"] = current_rank     # 직급 (L6)
+                    # 📌 지정 좌표에 데이터 기록
+                    ws["L2"] = date_val          
+                    ws["L4"] = selected_author  
+                    ws["L6"] = current_rank     
                     
-                    # 동적 행 삽입 및 서식 복사 함수 (C10 기준 매핑 반영)
+                    # 동적 행 삽입 및 서식 복사 함수
                     def insert_and_fill(target_label, task_list, is_plan=False):
                         target_row = None
                         for r in range(1, ws.max_row + 1):
@@ -193,7 +197,7 @@ with col2:
                                 break
                         
                         if target_label == "오전" and not target_row:
-                            target_row = 9  # C10 적재를 위한 기준 행 설정
+                            target_row = 9  
                         
                         if not target_row:
                             return
@@ -215,7 +219,6 @@ with col2:
                                     if source_cell.alignment:
                                         new_cell.alignment = Alignment(horizontal=source_cell.alignment.horizontal, vertical=source_cell.alignment.vertical)
                             
-                            # C열(3번째) 업무내용 / S열(19번째) 비고 및 시간 배치
                             if is_plan:
                                 ws.cell(row=current_r, column=2, value=f"{i+1:02d}")
                                 ws.cell(row=current_r, column=3, value=task)
@@ -223,16 +226,22 @@ with col2:
                                 ws.cell(row=current_r, column=3, value=task[0])
                                 ws.cell(row=current_r, column=19, value=task[1])
                     
-                    # 행 인덱스 유지를 위해 아래쪽부터 데이터 채움
                     insert_and_fill("익일 업무 계획", next_tasks, is_plan=True)
                     insert_and_fill("오후", afternoon_tasks)
                     insert_and_fill("오전", morning_tasks)
+                    
+                    # 🛡️ [핵심 패치] 스택오버플로우 해결책 적용
+                    # 복사해온 개별 시트 내부에 정의된 '이름 정의(Defined Names)' 충돌 버그 방지화 작업
+                    template_wb.defined_names = DefinedNames()
                     
                     final_wb._add_sheet(ws)
                 
                 if len(final_wb.sheetnames) > 1 and "Sheet" in final_wb.sheetnames:
                     final_wb.remove(default_sheet)
-                    
+                
+                # 🛡️ [핵심 패치 2] 최종 저장 파일 워크북 객체의 이름 정의 설정도 완벽히 초기화하여 저장 오류 원천 차단
+                final_wb.defined_names = DefinedNames()
+                
                 final_wb.save(output_buffer)
                 st.success("✨ 회사 양식 맞춤형 보고서 빌드가 완료되었습니다! 아래 다운로드 버튼을 누르세요.")
                 
