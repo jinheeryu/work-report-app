@@ -18,7 +18,7 @@ except Exception as e:
     st.error("구글 시트 연결에 실패했습니다. Secrets 설정 및 시트 공유 권한을 확인해주세요.")
     df = pd.DataFrame(columns=["날짜", "작성자", "직급", "업무구분", "고객사_프로젝트명", "시작시간", "종료시간", "업무량/내용", "진행상황"])
 
-# 과거 기록 자동완성용 프로젝트 리스트 안전하게 추출
+# 과거 기록 자동완성용 프로젝트 리스트 깔끔하게 추출 (KeyError 완전 패치)
 existing_projects = []
 if not df.empty and "고객사_프로젝트명" in df.columns:
     existing_projects = sorted(df["고객사_프로젝트명"].dropna().unique().tolist())
@@ -50,7 +50,7 @@ with col1:
             
         st.write("---")
         
-        # 🔗 프로젝트명 입력 방식 (잘 작동하는 로직 유지)
+        # 🔗 프로젝트명 입력 방식 (유지)
         st.write("🔗 **고객사_프로젝트명 입력**")
         if existing_projects:
             selected_hint = st.selectbox(
@@ -123,7 +123,7 @@ with col1:
                 st.rerun()
 
 # ----------------------------------------------------
-# 오른쪽 화면: 회사 맞춤형 양식틀 유지 엑셀 다운로드 엔진 (에러 완전 패치)
+# 오른쪽 화면: 회사 맞춤형 양식틀 유지 엑셀 다운로드 엔진
 # ----------------------------------------------------
 with col2:
     st.header("📥 일일 업무보고서 다운로드")
@@ -178,12 +178,12 @@ with col2:
                             else:
                                 afternoon_tasks.append((content_str, time_str))
                     
-                    # 📌 [요구사항] 명확히 지정해주신 절대 고정 좌표에 데이터 쓰기
+                    # 📌 알려주신 정확한 양식 고정 좌표에 데이터 기록
                     ws["L2"] = date_val          # 작성일
                     ws["L4"] = selected_author  # 작성자
                     ws["L6"] = current_rank     # 직급
                     
-                    # 동적 행 삽입 및 서식 안전 복사 함수
+                    # 동적 행 삽입 및 서식 복사 함수
                     def insert_and_fill(target_label, task_list, is_plan=False):
                         target_row = None
                         for r in range(1, ws.max_row + 1):
@@ -191,9 +191,9 @@ with col2:
                                 target_row = r
                                 break
                         
-                        # 만약 오전(C10 기준) 매핑일 경우 하드코딩 처리로 보완
+                        # 오전(C10 기준) 매핑일 경우 하드코딩 처리 보완
                         if target_label == "오전" and not target_row:
-                            target_row = 9 # C10 위에 라벨이 있다고 가정하거나 9번 행 기준으로 설정
+                            target_row = 9
                         
                         if not target_row:
                             return
@@ -202,7 +202,6 @@ with col2:
                             current_r = target_row + 1 + i
                             if i >= 1:
                                 ws.insert_rows(current_r, 1)
-                                # 🛡️ AttributeError 예외 방어 처리가 추가된 서식 복사 로직
                                 for col_idx in range(1, ws.max_column + 1):
                                     source_cell = ws.cell(row=current_r-1, column=col_idx)
                                     new_cell = ws.cell(row=current_r, column=col_idx)
@@ -216,15 +215,15 @@ with col2:
                                     if source_cell.alignment:
                                         new_cell.alignment = Alignment(horizontal=source_cell.alignment.horizontal, vertical=source_cell.alignment.vertical)
                             
-                            # 데이터 셀에 대입 (C열은 3번째 컬럼, S열은 19번째 컬럼)
+                            # C열(3번째) 업무내용 / S열(19번째) 비고 및 시간 배치
                             if is_plan:
-                                ws.cell(row=current_r, column=2, value=f"{i+1:02d}") # B열 번호
-                                ws.cell(row=current_r, column=3, value=task)         # C열 내용
+                                ws.cell(row=current_r, column=2, value=f"{i+1:02d}")
+                                ws.cell(row=current_r, column=3, value=task)
                             else:
-                                ws.cell(row=current_r, column=3, value=task[0])        # C열 업무 내용 란
-                                ws.cell(row=current_r, column=19, value=task[1])       # S열 비고 / 시간 란
+                                ws.cell(row=current_r, column=3, value=task[0])
+                                ws.cell(row=current_r, column=19, value=task[1])
                     
-                    # 데이터가 꼬이지 않도록 역순 아래에서부터 채움
+                    # 행 인덱스 꼬임 방지를 위해 아래쪽부터 적재
                     insert_and_fill("익일 업무 계획", next_tasks, is_plan=True)
                     insert_and_fill("오후", afternoon_tasks)
                     insert_and_fill("오전", morning_tasks)
