@@ -123,7 +123,7 @@ with col1:
                 st.rerun()
 
 # ----------------------------------------------------
-# 오른쪽 화면: 일일 업무보고서 다운로드 엔진 (요청 피드백 완벽 반영)
+# 오른쪽 화면: 일일 업무보고서 다운로드 엔진 (비즈니스 로직 맵핑 전면 수정)
 # ----------------------------------------------------
 with col2:
     st.header("📥 일일 업무보고서 다운로드")
@@ -137,11 +137,26 @@ with col2:
         selected_author = st.selectbox("📊 직원을 선택하세요", all_authors)
         
         author_df = df[df["작성자"] == selected_author].copy()
-        author_df["연월"] = pd.to_datetime(author_df["날짜"]).dt.strftime("%Y-%m")
+        
+        # 🛠️ [중요] 날짜 매핑 로직 전환을 위해 데이터프레임 전처리 구현
+        # 각 행마다 실제 배치되어야 할 'target_date'(보고서 대상 날짜)를 계산합니다.
+        target_dates = []
+        for _, row in author_df.iterrows():
+            current_dt = datetime.datetime.strptime(row["날짜"], "%Y-%m-%d").date()
+            if row["업무구분"] == "내일 계획":
+                # '내일 계획'의 날짜가 6/24라면 실제 보고서는 6/23 시트에 작성되어야 하므로 하루를 뺍니다.
+                target_dates.append((current_dt - datetime.timedelta(days=1)).strftime("%Y-%m-%d"))
+            else:
+                # '오늘 업무'는 그대로 유지합니다.
+                target_dates.append(row["날짜"])
+                
+        author_df["target_date"] = target_dates
+        author_df["연월"] = pd.to_datetime(author_df["target_date"]).dt.strftime("%Y-%m")
         
         all_months = sorted(author_df["연월"].unique().tolist(), reverse=True)
         selected_month = st.selectbox("📅 다운로드할 월 선택", all_months)
         
+        # 선택한 월의 target_date 기준 데이터 필터링
         final_df = author_df[author_df["연월"] == selected_month]
         current_rank = final_df["직급"].iloc[-1] if not final_df.empty else "사원"
         
@@ -149,30 +164,32 @@ with col2:
         
         if st.button("📊 템플릿 서식으로 보고서 생성하기"):
             try:
-                unique_dates = sorted(final_df["날짜"].unique())
+                # 구글 시트 등록 날짜가 아닌, 실제 엑셀 시트 탭이 될 target_date 기준으로 고유 날짜를 추출합니다.
+                unique_target_dates = sorted(final_df["target_date"].unique())
                 output_buffer = io.BytesIO()
                 final_wb = openpyxl.Workbook()
                 default_sheet = final_wb.active
                 
-                for date_val in unique_dates:
+                for t_date in unique_target_dates:
                     template_wb = openpyxl.load_workbook("template.xlsx")
                     ws = template_wb.active
                     
-                    sheet_title = pd.to_datetime(date_val).strftime("%m-%d")
-                    day_data = final_df[final_df["날짜"] == date_val]
+                    sheet_title = pd.to_datetime(t_date).strftime("%m-%d")
+                    # 해당 시트 날짜(t_date)에 들어가야 하는 데이터 수집
+                    day_data = final_df[final_df["target_date"] == t_date]
                     
                     morning_tasks = []
                     afternoon_tasks = []
                     next_tasks = []
                     
-                    # 🛠️ 데이터 구조 분리 (딕셔너리 형태로 필요한 정보 개별 보존)
                     for _, row in day_data.iterrows():
                         task_info = {
                             "project": row['고객사_프로젝트명'],
-                            "content": f"{row['업무량/내용']} ({row['진행상황']})",
+                            "content": f"{row['업무량/내용']}",
                             "time": f"{row['시작시간']} ~ {row['종료시간']}"
                         }
                         
+                        # 💡 이미 target_date로 분류되어 들어왔으므로 업무구분 분기만 태우면 완벽합니다.
                         if row['업무구분'] == "내일 계획":
                             next_tasks.append(task_info)
                         else:
@@ -183,7 +200,7 @@ with col2:
                                 afternoon_tasks.append(task_info)
                     
                     # 📌 상단 고정 메타 정보 기입 (I열 적용)
-                    ws["I2"] = date_val          
+                    ws["I2"] = t_date          
                     ws["I4"] = selected_author  
                     ws["I6"] = current_rank     
                     
@@ -196,7 +213,6 @@ with col2:
                         if i >= 1:
                             ws.insert_rows(current_r, 1)
                             inserted_morning_count += 1
-                            # 서식 스타일 복사 (C, N, P열 및 전체 라인 유지용)
                             for col_idx in range(1, max(ws.max_column, 24) + 1):
                                 source_cell = ws.cell(row=current_r-1, column=col_idx)
                                 new_cell = ws.cell(row=current_r, column=col_idx)
@@ -209,10 +225,9 @@ with col2:
                                 if source_cell.alignment:
                                     new_cell.alignment = Alignment(horizontal=source_cell.alignment.horizontal, vertical=source_cell.alignment.vertical)
                         
-                        # 🎯 요청에 맞춘 열 매핑 변경 (C: 프로젝트, N: 내용, P: 시간)
-                        ws.cell(row=current_r, column=3, value=task["project"])   # C열 (3)
-                        ws.cell(row=current_r, column=14, value=task["content"]) # N열 (14)
-                        ws.cell(row=current_r, column=16, value=task["time"])    # P열 (16)
+                        ws.cell(row=current_r, column=3, value=task["project"])   # C열
+                        ws.cell(row=current_r, column=14, value=task["content"]) # N열
+                        ws.cell(row=current_r, column=16, value=task["time"])    # P열
 
                     # 2. 오후 업무 적재 (오전 행 증가량에 연동)
                     start_afternoon_row = 12 + inserted_morning_count
@@ -235,14 +250,11 @@ with col2:
                                 if source_cell.alignment:
                                     new_cell.alignment = Alignment(horizontal=source_cell.alignment.horizontal, vertical=source_cell.alignment.vertical)
                         
-                        # 🎯 요청에 맞춘 열 매핑 변경
                         ws.cell(row=current_r, column=3, value=task["project"])   # C열
                         ws.cell(row=current_r, column=14, value=task["content"]) # N열
                         ws.cell(row=current_r, column=16, value=task["time"])    # P열
 
-                    # 🛠️ 3. 익일 업무 계획 적재 (동적 수식 연동 정밀 보정)
-                    # 원본 템플릿의 '익일 업무 계획' 라벨은 원래 16행 근처에 분포합니다.
-                    # 오전과 오후 데이터가 누적되어 밀어낸 행의 수만큼 시작 지점을 아래 수식으로 명확히 지정합니다.
+                    # 3. 익일 업무 계획 적재 (동적 수식 연동 정밀 매핑)
                     start_plan_row = 16 + inserted_morning_count + inserted_afternoon_count
                     
                     for i, task in enumerate(next_tasks):
@@ -257,16 +269,15 @@ with col2:
                                 if source_cell.border:
                                     new_cell.border = Border(left=source_cell.border.left, right=source_cell.border.right, top=source_cell.border.top, bottom=source_cell.border.bottom)
                                 if source_cell.fill and source_cell.fill.fill_type:
-                                    new_cell.fill = PatternFill(fill_type=source_cell.fill.fill_type, start_color=source_cell.fill.start_color, end_color=source_color.fill.end_color)
+                                    new_cell.fill = PatternFill(fill_type=source_cell.fill.fill_type, start_color=source_cell.fill.start_color, end_color=source_cell.fill.end_color)
                                 if source_cell.alignment:
                                     new_cell.alignment = Alignment(horizontal=source_cell.alignment.horizontal, vertical=source_cell.alignment.vertical)
                         
-                        # 번호 포맷팅 및 내용 적재
                         ws.cell(row=current_r, column=2, value=f"{i+1:02d}")                    # B열 (순번)
                         ws.cell(row=current_r, column=3, value=task["project"])               # C열 (프로젝트)
                         ws.cell(row=current_r, column=14, value=task["content"])              # N열 (계획내용)
 
-                    # 🛡️ 안전하게 최종 시트 병합 처리
+                    # 🛡️ 안전하게 최종 시트 병합 및 복사 처리
                     new_ws = final_wb.create_sheet(title=sheet_title)
                     
                     for col in ws.columns:
@@ -294,7 +305,7 @@ with col2:
                     final_wb.remove(default_sheet)
                     
                 final_wb.save(output_buffer)
-                st.success("✨ 회사 양식 맞춤형 보고서 빌드가 완료되었습니다! 아래 다운로드 버튼을 누르세요.")
+                st.success("✨ 날짜 조건 교차 반영 및 템플릿 빌드가 완료되었습니다! 아래 다운로드 버튼을 누르세요.")
                 
                 st.download_button(
                     label=f"📥 {selected_author}_일일업무보고서 양식 출력본 다운로드",
