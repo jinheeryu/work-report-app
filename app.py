@@ -215,7 +215,7 @@ with col2:
                     # else:
                     #     start_afternoon_row = 12
                     # inserted_afternoon_count = 0
-                    start_plan_row = 12 + inserted_morning_count
+                    start_afternoon_row = 12 + inserted_morning_count
                     
                     for i, task in enumerate(afternoon_tasks):
                         current_r = start_afternoon_row + i
