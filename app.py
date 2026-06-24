@@ -211,9 +211,9 @@ with col2:
                     # 2. 오후 업무 적재
                     # 오전 행이 추가된 만큼 유동적으로 계산
                     if inserted_morning_count > 2 :
-                        start_afternoon_row = 13 + inserted_morning_count
+                        start_afternoon_row = 12 + inserted_morning_count
                     else:
-                        start_afternoon_row = 13
+                        start_afternoon_row = 12
                     inserted_afternoon_count = 0
                     
                     for i, task in enumerate(afternoon_tasks):
@@ -239,7 +239,14 @@ with col2:
                     # 🛠️ 3. 익일 업무 계획 적재 (유동 계산 연동 완료 지점)
                     # 원본 템플릿의 '익일 업무 계획' 라벨 위치는 원래 17행입니다.
                     # 오전 추가량(`inserted_morning_count`)과 오후 추가량(`inserted_afternoon_count`)을 더해 정확한 동적 위치를 추적합니다.
-                    start_plan_row = 18 + inserted_morning_count + inserted_afternoon_count
+                    if inserted_morning_count > 2 and inserted_afternoon_count > 4:
+                        start_plan_row = 17 + inserted_morning_count + inserted_afternoon_count
+                    elif inserted_morning_count > 2:
+                        start_plan_row = 17 + inserted_morning_count
+                    elif inserted_afternoon_count > 4:
+                        start_plan_row = 17 + inserted_afternoon_count
+                    else:
+                        start_plan_row = 17
                     
                     for i, task in enumerate(next_tasks):
                         current_r = start_plan_row + i
