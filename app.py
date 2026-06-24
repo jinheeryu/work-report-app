@@ -123,7 +123,7 @@ with col1:
                 st.rerun()
 
 # ----------------------------------------------------
-# 오른쪽 화면: 회사 맞춤형 양식틀 유지 엑셀 다운로드 엔진 (ValueError 차단 정밀 수정)
+# 오른쪽 화면: 일일 업무보고서 다운로드 엔진 (요청 사항 집중 패치)
 # ----------------------------------------------------
 with col2:
     st.header("📥 일일 업무보고서 다운로드")
@@ -159,7 +159,6 @@ with col2:
                     ws = template_wb.active
                     
                     sheet_title = pd.to_datetime(date_val).strftime("%m-%d")
-                    
                     day_data = final_df[final_df["날짜"] == date_val]
                     
                     morning_tasks = []
@@ -179,33 +178,78 @@ with col2:
                             else:
                                 afternoon_tasks.append((content_str, time_str))
                     
-                    # 📌 지정 고정 좌표에 데이터 쓰기
-                    ws["L2"] = date_val          # 작성일
-                    ws["L4"] = selected_author  # 작성자
-                    ws["L6"] = current_rank     # 직급
+                    # 📌 상단 고정 정보 기입
+                    ws["L2"] = date_val          
+                    ws["L4"] = selected_author  
+                    ws["L6"] = current_rank     
                     
-                    # 동적 행 삽입 및 서식 안전 복사 함수
-                    def insert_and_fill(target_label, task_list, is_plan=False):
-                        target_row = None
-                        for r in range(1, ws.max_row + 1):
-                            if ws.cell(row=r, column=2).value == target_label:
-                                target_row = r
-                                break
+                    # 🛠️ [요구사항 반영] 오전 및 오후 동적 위치 추적 시스템 고도화
+                    # 1. 오전 업무 적재 (무조건 10번 행 고정 시작)
+                    start_morning_row = 10
+                    inserted_morning_count = 0
+                    
+                    for i, task in enumerate(morning_tasks):
+                        current_r = start_morning_row + i
+                        if i >= 1:
+                            ws.insert_rows(current_r, 1)
+                            inserted_morning_count += 1
+                            # 서식 복사 (최대 24열까지 넉넉하게 확장 보장)
+                            for col_idx in range(1, max(ws.max_column, 24) + 1):
+                                source_cell = ws.cell(row=current_r-1, column=col_idx)
+                                new_cell = ws.cell(row=current_r, column=col_idx)
+                                if source_cell.font:
+                                    new_cell.font = Font(name=source_cell.font.name, size=source_cell.font.size)
+                                if source_cell.border:
+                                    new_cell.border = Border(left=source_cell.border.left, right=source_cell.border.right, top=source_cell.border.top, bottom=source_cell.border.bottom)
+                                if source_cell.fill and source_cell.fill.fill_type:
+                                    new_cell.fill = PatternFill(fill_type=source_cell.fill.fill_type, start_color=source_cell.fill.start_color, end_color=source_cell.fill.end_color)
+                                if source_cell.alignment:
+                                    new_cell.alignment = Alignment(horizontal=source_cell.alignment.horizontal, vertical=source_cell.alignment.vertical)
                         
-                        if target_label == "오전" and not target_row:
-                            target_row = 9
+                        ws.cell(row=current_r, column=3, value=task[0])
+                        ws.cell(row=current_r, column=19, value=task[1])
+
+                    # 2. 오후 업무 적재 (오전 행 증가량에 따라 유동적으로 시작행 계산)
+                    # 오전 업무가 안 늘어났으면 13행, 늘어났으면 (13 + 늘어난 행 수)가 시작행이 됨
+                    start_afternoon_row = 13 + inserted_morning_count
+                    inserted_afternoon_count = 0
+                    
+                    for i, task in enumerate(afternoon_tasks):
+                        current_r = start_afternoon_row + i
+                        if i >= 1:
+                            ws.insert_rows(current_r, 1)
+                            inserted_afternoon_count += 1
+                            for col_idx in range(1, max(ws.max_column, 24) + 1):
+                                source_cell = ws.cell(row=current_r-1, column=col_idx)
+                                new_cell = ws.cell(row=current_r, column=col_idx)
+                                if source_cell.font:
+                                    new_cell.font = Font(name=source_cell.font.name, size=source_cell.font.size)
+                                if source_cell.border:
+                                    new_cell.border = Border(left=source_cell.border.left, right=source_cell.border.right, top=source_cell.border.top, bottom=source_cell.border.bottom)
+                                if source_cell.fill and source_cell.fill.fill_type:
+                                    new_cell.fill = PatternFill(fill_type=source_cell.fill.fill_type, start_color=source_cell.fill.start_color, end_color=source_cell.fill.end_color)
+                                if source_cell.alignment:
+                                    new_cell.alignment = Alignment(horizontal=source_cell.alignment.horizontal, vertical=source_cell.alignment.vertical)
                         
-                        if not target_row:
-                            return
-                        
-                        for i, task in enumerate(task_list):
-                            current_r = target_row + 1 + i
+                        ws.cell(row=current_r, column=3, value=task[0])
+                        ws.cell(row=current_r, column=19, value=task[1])
+
+                    # 3. 익일 업무 계획 적재 (오전/오후 누적 증가량 반영하여 기준 라벨 탐색)
+                    # 양식의 라벨명을 직접 찾아 행 삽입 시 서식이 9열(S열) 등 전체 영역에 깨짐 없이 완벽 동기화되도록 패치
+                    target_plan_label_row = None
+                    for r in range(1, ws.max_row + 1):
+                        if ws.cell(row=r, column=2).value == "익일 업무 계획":
+                            target_plan_label_row = r
+                            break
+                    
+                    if target_plan_label_row:
+                        for i, task in enumerate(next_tasks):
+                            current_r = target_plan_label_row + 1 + i
                             if i >= 1:
                                 ws.insert_rows(current_r, 1)
-                                for col_idx in range(1, ws.max_column + 1):
+                                for col_idx in range(1, max(ws.max_column, 24) + 1):
                                     source_cell = ws.cell(row=current_r-1, column=col_idx)
                                     new_cell = ws.cell(row=current_r, column=col_idx)
-                                    
                                     if source_cell.font:
                                         new_cell.font = Font(name=source_cell.font.name, size=source_cell.font.size)
                                     if source_cell.border:
@@ -215,22 +259,12 @@ with col2:
                                     if source_cell.alignment:
                                         new_cell.alignment = Alignment(horizontal=source_cell.alignment.horizontal, vertical=source_cell.alignment.vertical)
                             
-                            if is_plan:
-                                ws.cell(row=current_r, column=2, value=f"{i+1:02d}")
-                                ws.cell(row=current_r, column=3, value=task)
-                            else:
-                                ws.cell(row=current_r, column=3, value=task[0])
-                                ws.cell(row=current_r, column=19, value=task[1])
-                    
-                    insert_and_fill("익일 업무 계획", next_tasks, is_plan=True)
-                    insert_and_fill("오후", afternoon_tasks)
-                    insert_and_fill("오전", morning_tasks)
-                    
-                    # 🛡️ [핵심 안전 복사 패치] ValueError 타계책
-                    # 외부 워크북의 시트를 통째로 집어넣는 대신, final_wb 내부에 새 시트를 만들고 셀 값을 정석대로 복사합니다.
+                            ws.cell(row=current_r, column=2, value=f"{i+1:02d}")
+                            ws.cell(row=current_r, column=3, value=task)
+
+                    # 🛡️ 외부 워크북 간 안전 하드웨어 복사 프로세스 가동 (오류 해결 지점)
                     new_ws = final_wb.create_sheet(title=sheet_title)
                     
-                    # 1단계: 열 너비 및 행 높이 등 구조 정보 복사
                     for col in ws.columns:
                         col_letter = openpyxl.utils.get_column_letter(col[0].column)
                         new_ws.column_dimensions[col_letter].width = ws.column_dimensions[col_letter].width
@@ -238,7 +272,6 @@ with col2:
                         if r_idx in ws.row_dimensions:
                             new_ws.row_dimensions[r_idx].height = ws.row_dimensions[r_idx].height
                     
-                    # 2단계: 서식 및 데이터 셀 단위 하드웨어 복사 (이름 정의 충돌 근본 방지)
                     for row in ws.iter_rows(values_only=False):
                         for cell in row:
                             new_cell = new_ws.cell(row=cell.row, column=cell.column, value=cell.value)
@@ -250,7 +283,6 @@ with col2:
                                 new_cell.alignment = Alignment(horizontal=cell.alignment.horizontal, vertical=cell.alignment.vertical, wrap_text=cell.alignment.wrap_text)
                                 new_cell.number_format = cell.number_format
                     
-                    # 3단계: 템플릿의 원래 병합 정보 완벽 계승
                     for merged_range in ws.merged_cells.ranges:
                         new_ws.merge_cells(str(merged_range))
                 
