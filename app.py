@@ -216,6 +216,7 @@ with col2:
                     #     start_afternoon_row = 12
                     # inserted_afternoon_count = 0
                     start_afternoon_row = 12 + inserted_morning_count
+                    inserted_afternoon_count = 0
                     
                     for i, task in enumerate(afternoon_tasks):
                         current_r = start_afternoon_row + i
