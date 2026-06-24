@@ -273,9 +273,10 @@ with col2:
                                 if source_cell.alignment:
                                     new_cell.alignment = Alignment(horizontal=source_cell.alignment.horizontal, vertical=source_cell.alignment.vertical)
                         
-                        ws.cell(row=current_r, column=2, value=f"{i+1:02d}")                    # B열 (순번)
+                        # ws.cell(row=current_r, column=2, value=f"{i+1:02d}")                    # B열 (순번)
                         ws.cell(row=current_r, column=3, value=task["project"])               # C열 (프로젝트)
                         ws.cell(row=current_r, column=14, value=task["content"])              # N열 (계획내용)
+                        ws.cell(row=current_r, column=16, value=task["time"])                 # P열 (작업 시간 계획)
 
                     # 🛡️ 안전하게 최종 시트 병합 및 복사 처리
                     new_ws = final_wb.create_sheet(title=sheet_title)
