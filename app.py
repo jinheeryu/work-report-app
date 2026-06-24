@@ -123,7 +123,7 @@ with col1:
                 st.rerun()
 
 # ----------------------------------------------------
-# 오른쪽 화면: 일일 업무보고서 다운로드 엔진 (요청 사항 집중 패치)
+# 오른쪽 화면: 일일 업무보고서 다운로드 엔진 (수정구간)
 # ----------------------------------------------------
 with col2:
     st.header("📥 일일 업무보고서 다운로드")
@@ -183,7 +183,6 @@ with col2:
                     ws["L4"] = selected_author  
                     ws["L6"] = current_rank     
                     
-                    # 🛠️ [요구사항 반영] 오전 및 오후 동적 위치 추적 시스템 고도화
                     # 1. 오전 업무 적재 (무조건 10번 행 고정 시작)
                     start_morning_row = 10
                     inserted_morning_count = 0
@@ -193,7 +192,7 @@ with col2:
                         if i >= 1:
                             ws.insert_rows(current_r, 1)
                             inserted_morning_count += 1
-                            # 서식 복사 (최대 24열까지 넉넉하게 확장 보장)
+                            # 서식 복사
                             for col_idx in range(1, max(ws.max_column, 24) + 1):
                                 source_cell = ws.cell(row=current_r-1, column=col_idx)
                                 new_cell = ws.cell(row=current_r, column=col_idx)
@@ -209,8 +208,8 @@ with col2:
                         ws.cell(row=current_r, column=3, value=task[0])
                         ws.cell(row=current_r, column=19, value=task[1])
 
-                    # 2. 오후 업무 적재 (오전 행 증가량에 따라 유동적으로 시작행 계산)
-                    # 오전 업무가 안 늘어났으면 13행, 늘어났으면 (13 + 늘어난 행 수)가 시작행이 됨
+                    # 2. 오후 업무 적재
+                    # 오전 행이 추가된 만큼 유동적으로 계산
                     start_afternoon_row = 13 + inserted_morning_count
                     inserted_afternoon_count = 0
                     
@@ -234,35 +233,33 @@ with col2:
                         ws.cell(row=current_r, column=3, value=task[0])
                         ws.cell(row=current_r, column=19, value=task[1])
 
-                    # 3. 익일 업무 계획 적재 (오전/오후 누적 증가량 반영하여 기준 라벨 탐색)
-                    # 양식의 라벨명을 직접 찾아 행 삽입 시 서식이 9열(S열) 등 전체 영역에 깨짐 없이 완벽 동기화되도록 패치
-                    target_plan_label_row = None
-                    for r in range(1, ws.max_row + 1):
-                        if ws.cell(row=r, column=2).value == "익일 업무 계획":
-                            target_plan_label_row = r
-                            break
+                    # 🛠️ 3. 익일 업무 계획 적재 (유동 계산 연동 완료 지점)
+                    # 원본 템플릿의 '익일 업무 계획' 라벨 위치는 원래 17행입니다.
+                    # 오전 추가량(`inserted_morning_count`)과 오후 추가량(`inserted_afternoon_count`)을 더해 정확한 동적 위치를 추적합니다.
+                    start_plan_row = 18 + inserted_morning_count + inserted_afternoon_count
                     
-                    if target_plan_label_row:
-                        for i, task in enumerate(next_tasks):
-                            current_r = target_plan_label_row + 1 + i
-                            if i >= 1:
-                                ws.insert_rows(current_r, 1)
-                                for col_idx in range(1, max(ws.max_column, 24) + 1):
-                                    source_cell = ws.cell(row=current_r-1, column=col_idx)
-                                    new_cell = ws.cell(row=current_r, column=col_idx)
-                                    if source_cell.font:
-                                        new_cell.font = Font(name=source_cell.font.name, size=source_cell.font.size)
-                                    if source_cell.border:
-                                        new_cell.border = Border(left=source_cell.border.left, right=source_cell.border.right, top=source_cell.border.top, bottom=source_cell.border.bottom)
-                                    if source_cell.fill and source_cell.fill.fill_type:
-                                        new_cell.fill = PatternFill(fill_type=source_cell.fill.fill_type, start_color=source_cell.fill.start_color, end_color=source_cell.fill.end_color)
-                                    if source_cell.alignment:
-                                        new_cell.alignment = Alignment(horizontal=source_cell.alignment.horizontal, vertical=source_cell.alignment.vertical)
-                            
-                            ws.cell(row=current_r, column=2, value=f"{i+1:02d}")
-                            ws.cell(row=current_r, column=3, value=task)
+                    for i, task in enumerate(next_tasks):
+                        current_r = start_plan_row + i
+                        if i >= 1:
+                            ws.insert_rows(current_r, 1)
+                            # 기존 9열(S열) 등의 양식 선 깨짐 현상을 원천 방지하기 위해 스타일 소스를 상단 원본 행에서 끌어와 완벽하게 덮어씁니다.
+                            for col_idx in range(1, max(ws.max_column, 24) + 1):
+                                source_cell = ws.cell(row=current_r-1, column=col_idx)
+                                new_cell = ws.cell(row=current_r, column=col_idx)
+                                if source_cell.font:
+                                    new_cell.font = Font(name=source_cell.font.name, size=source_cell.font.size)
+                                if source_cell.border:
+                                    new_cell.border = Border(left=source_cell.border.left, right=source_cell.border.right, top=source_cell.border.top, bottom=source_cell.border.bottom)
+                                if source_cell.fill and source_cell.fill.fill_type:
+                                    new_cell.fill = PatternFill(fill_type=source_cell.fill.fill_type, start_color=source_cell.fill.start_color, end_color=source_cell.fill.end_color)
+                                if source_cell.alignment:
+                                    new_cell.alignment = Alignment(horizontal=source_cell.alignment.horizontal, vertical=source_cell.alignment.vertical)
+                        
+                        # 순번 포맷(01, 02...) 유지 및 값 지정
+                        ws.cell(row=current_r, column=2, value=f"{i+1:02d}")
+                        ws.cell(row=current_r, column=3, value=task)
 
-                    # 🛡️ 외부 워크북 간 안전 하드웨어 복사 프로세스 가동 (오류 해결 지점)
+                    # 🛡️ 안전 시트 복사 및 병합 핸들링 프로세스
                     new_ws = final_wb.create_sheet(title=sheet_title)
                     
                     for col in ws.columns:
