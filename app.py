@@ -50,7 +50,7 @@ with col1:
             
         st.write("---")
         
-        # 🔗 프로젝트명 입력 방식 (잘 작동하는 로직 유지)
+        # 🔗 프로젝트명 입력 방식
         st.write("🔗 **고객사_프로젝트명 입력**")
         if existing_projects:
             selected_hint = st.selectbox(
@@ -123,7 +123,7 @@ with col1:
                 st.rerun()
 
 # ----------------------------------------------------
-# 오른쪽 화면: 일일 업무보고서 다운로드 엔진 (수정구간)
+# 오른쪽 화면: 일일 업무보고서 다운로드 엔진 (요청 피드백 완벽 반영)
 # ----------------------------------------------------
 with col2:
     st.header("📥 일일 업무보고서 다운로드")
@@ -165,25 +165,29 @@ with col2:
                     afternoon_tasks = []
                     next_tasks = []
                     
+                    # 🛠️ 데이터 구조 분리 (딕셔너리 형태로 필요한 정보 개별 보존)
                     for _, row in day_data.iterrows():
-                        time_str = f"{row['시작시간']} ~ {row['종료시간']}"
-                        content_str = f"[{row['고객사_프로젝트명']}] {row['업무량/내용']} ({row['진행상황']})"
+                        task_info = {
+                            "project": row['고객사_프로젝트명'],
+                            "content": f"{row['업무량/내용']} ({row['진행상황']})",
+                            "time": f"{row['시작시간']} ~ {row['종료시간']}"
+                        }
                         
                         if row['업무구분'] == "내일 계획":
-                            next_tasks.append(content_str)
+                            next_tasks.append(task_info)
                         else:
                             start_hour = int(row['시작시간'].split(':')[0])
                             if start_hour < 12:
-                                morning_tasks.append((content_str, time_str))
+                                morning_tasks.append(task_info)
                             else:
-                                afternoon_tasks.append((content_str, time_str))
+                                afternoon_tasks.append(task_info)
                     
-                    # 📌 상단 고정 정보 기입
+                    # 📌 상단 고정 메타 정보 기입 (I열 적용)
                     ws["I2"] = date_val          
                     ws["I4"] = selected_author  
                     ws["I6"] = current_rank     
                     
-                    # 1. 오전 업무 적재 (무조건 10번 행 고정 시작)
+                    # 1. 오전 업무 적재 (10번 행 고정 시작)
                     start_morning_row = 10
                     inserted_morning_count = 0
                     
@@ -192,7 +196,7 @@ with col2:
                         if i >= 1:
                             ws.insert_rows(current_r, 1)
                             inserted_morning_count += 1
-                            # 서식 복사
+                            # 서식 스타일 복사 (C, N, P열 및 전체 라인 유지용)
                             for col_idx in range(1, max(ws.max_column, 24) + 1):
                                 source_cell = ws.cell(row=current_r-1, column=col_idx)
                                 new_cell = ws.cell(row=current_r, column=col_idx)
@@ -205,16 +209,12 @@ with col2:
                                 if source_cell.alignment:
                                     new_cell.alignment = Alignment(horizontal=source_cell.alignment.horizontal, vertical=source_cell.alignment.vertical)
                         
-                        ws.cell(row=current_r, column=3, value=task[0])
-                        ws.cell(row=current_r, column=19, value=task[1])
+                        # 🎯 요청에 맞춘 열 매핑 변경 (C: 프로젝트, N: 내용, P: 시간)
+                        ws.cell(row=current_r, column=3, value=task["project"])   # C열 (3)
+                        ws.cell(row=current_r, column=14, value=task["content"]) # N열 (14)
+                        ws.cell(row=current_r, column=16, value=task["time"])    # P열 (16)
 
-                    # 2. 오후 업무 적재
-                    # 오전 행이 추가된 만큼 유동적으로 계산
-                    # if inserted_morning_count > 2 :
-                    #     start_afternoon_row = 12 + inserted_morning_count
-                    # else:
-                    #     start_afternoon_row = 12
-                    # inserted_afternoon_count = 0
+                    # 2. 오후 업무 적재 (오전 행 증가량에 연동)
                     start_afternoon_row = 12 + inserted_morning_count
                     inserted_afternoon_count = 0
                     
@@ -235,27 +235,20 @@ with col2:
                                 if source_cell.alignment:
                                     new_cell.alignment = Alignment(horizontal=source_cell.alignment.horizontal, vertical=source_cell.alignment.vertical)
                         
-                        ws.cell(row=current_r, column=3, value=task[0])
-                        ws.cell(row=current_r, column=19, value=task[1])
+                        # 🎯 요청에 맞춘 열 매핑 변경
+                        ws.cell(row=current_r, column=3, value=task["project"])   # C열
+                        ws.cell(row=current_r, column=14, value=task["content"]) # N열
+                        ws.cell(row=current_r, column=16, value=task["time"])    # P열
 
-                    # 🛠️ 3. 익일 업무 계획 적재 (유동 계산 연동 완료 지점)
-                    # 원본 템플릿의 '익일 업무 계획' 라벨 위치는 원래 17행입니다.
-                    # 오전 추가량(`inserted_morning_count`)과 오후 추가량(`inserted_afternoon_count`)을 더해 정확한 동적 위치를 추적합니다.
-                    # if inserted_morning_count > 2 and inserted_afternoon_count > 4:
-                    #     start_plan_row = 17 + inserted_morning_count + inserted_afternoon_count
-                    # elif inserted_morning_count > 2:
-                    #     start_plan_row = 17 + inserted_morning_count
-                    # elif inserted_afternoon_count > 4:
-                    #     start_plan_row = 17 + inserted_afternoon_count
-                    # else:
-                    #     start_plan_row = 17
-                    start_plan_row = 17 + inserted_morning_count + inserted_afternoon_count
+                    # 🛠️ 3. 익일 업무 계획 적재 (동적 수식 연동 정밀 보정)
+                    # 원본 템플릿의 '익일 업무 계획' 라벨은 원래 16행 근처에 분포합니다.
+                    # 오전과 오후 데이터가 누적되어 밀어낸 행의 수만큼 시작 지점을 아래 수식으로 명확히 지정합니다.
+                    start_plan_row = 16 + inserted_morning_count + inserted_afternoon_count
                     
                     for i, task in enumerate(next_tasks):
                         current_r = start_plan_row + i
                         if i >= 1:
                             ws.insert_rows(current_r, 1)
-                            # 기존 9열(S열) 등의 양식 선 깨짐 현상을 원천 방지하기 위해 스타일 소스를 상단 원본 행에서 끌어와 완벽하게 덮어씁니다.
                             for col_idx in range(1, max(ws.max_column, 24) + 1):
                                 source_cell = ws.cell(row=current_r-1, column=col_idx)
                                 new_cell = ws.cell(row=current_r, column=col_idx)
@@ -264,15 +257,16 @@ with col2:
                                 if source_cell.border:
                                     new_cell.border = Border(left=source_cell.border.left, right=source_cell.border.right, top=source_cell.border.top, bottom=source_cell.border.bottom)
                                 if source_cell.fill and source_cell.fill.fill_type:
-                                    new_cell.fill = PatternFill(fill_type=source_cell.fill.fill_type, start_color=source_cell.fill.start_color, end_color=source_cell.fill.end_color)
+                                    new_cell.fill = PatternFill(fill_type=source_cell.fill.fill_type, start_color=source_cell.fill.start_color, end_color=source_color.fill.end_color)
                                 if source_cell.alignment:
                                     new_cell.alignment = Alignment(horizontal=source_cell.alignment.horizontal, vertical=source_cell.alignment.vertical)
                         
-                        # 순번 포맷(01, 02...) 유지 및 값 지정
-                        ws.cell(row=current_r, column=2, value=f"{i+1:02d}")
-                        ws.cell(row=current_r, column=3, value=task)
+                        # 번호 포맷팅 및 내용 적재
+                        ws.cell(row=current_r, column=2, value=f"{i+1:02d}")                    # B열 (순번)
+                        ws.cell(row=current_r, column=3, value=task["project"])               # C열 (프로젝트)
+                        ws.cell(row=current_r, column=14, value=task["content"])              # N열 (계획내용)
 
-                    # 🛡️ 안전 시트 복사 및 병합 핸들링 프로세스
+                    # 🛡️ 안전하게 최종 시트 병합 처리
                     new_ws = final_wb.create_sheet(title=sheet_title)
                     
                     for col in ws.columns:
