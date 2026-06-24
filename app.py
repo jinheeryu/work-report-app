@@ -179,9 +179,9 @@ with col2:
                                 afternoon_tasks.append((content_str, time_str))
                     
                     # 📌 상단 고정 정보 기입
-                    ws["L2"] = date_val          
-                    ws["L4"] = selected_author  
-                    ws["L6"] = current_rank     
+                    ws["I2"] = date_val          
+                    ws["I4"] = selected_author  
+                    ws["I6"] = current_rank     
                     
                     # 1. 오전 업무 적재 (무조건 10번 행 고정 시작)
                     start_morning_row = 10
@@ -210,7 +210,10 @@ with col2:
 
                     # 2. 오후 업무 적재
                     # 오전 행이 추가된 만큼 유동적으로 계산
-                    start_afternoon_row = 13 + inserted_morning_count
+                    if inserted_morning_count > 2 :
+                        start_afternoon_row = 13 + inserted_morning_count
+                    else:
+                        start_afternoon_row = 13
                     inserted_afternoon_count = 0
                     
                     for i, task in enumerate(afternoon_tasks):
