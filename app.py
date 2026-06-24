@@ -255,7 +255,7 @@ with col2:
                         ws.cell(row=current_r, column=16, value=task["time"])    # P열
 
                     # 3. 익일 업무 계획 적재 (동적 수식 연동 정밀 매핑)
-                    start_plan_row = 16 + inserted_morning_count + inserted_afternoon_count
+                    start_plan_row = 17 + inserted_morning_count + inserted_afternoon_count
                     
                     for i, task in enumerate(next_tasks):
                         current_r = start_plan_row + i
